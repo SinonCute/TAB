@@ -6,16 +6,19 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.List;
 
 public class TablistFormattingConfiguration extends ConfigurationSection {
 
     private final String SECTION = "tablist-name-formatting";
     public final boolean antiOverride = getBoolean(SECTION + ".anti-override", true);
     @Nullable public final String disableCondition = getString(SECTION + ".disable-condition", "%world%=disabledworld");
+    // MineVN start
+    public final List<String> viewerFormatCheck = getStringList(SECTION + ".viewer-format-check", Arrays.asList("server_a", "server_b"));
 
     public TablistFormattingConfiguration(@NotNull ConfigurationFile config) {
         super(config);
-        checkForUnknownKey(SECTION, Arrays.asList("enabled", "anti-override", "disable-condition"));
+        checkForUnknownKey(SECTION, Arrays.asList("enabled", "anti-override", "disable-condition", "viewer-format-check"));
         printStartupWarns();
     }
 

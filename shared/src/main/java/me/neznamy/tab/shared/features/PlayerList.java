@@ -166,11 +166,18 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
                 if (redis != null) redis.sendMessage(new UpdateRedisPlayer(all.getUniqueId(),
                         all.tablistData.prefix.get() + all.tablistData.name.get() + all.tablistData.suffix.get()));
             }
+            // MineVN start
+            if (configuration.viewerFormatCheck.contains(all.server) && all.globalPlayerListData.clusterMainServerId.equals(all.server)) {
+                all.tablistData.ignoreDisabled.set(true);
+            }
+            // MineVN end
         }
         for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
             if (viewer.getVersion().getMinorVersion() < 8) continue;
             for (TabPlayer target : TAB.getInstance().getOnlinePlayers()) {
-                if (target.tablistData.disabled.get()) continue;
+                // MineVN start
+                if (target.tablistData.disabled.get() && !target.tablistData.ignoreDisabled.get()) continue;
+                // MineVN end
                 //if (!viewer.getTabList().containsEntry(target.getTablistId())) continue;
                 viewer.getTabList().updateDisplayName(getTablistUUID(target, viewer), getTabFormat(target, viewer));
             }
@@ -182,7 +189,9 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
         for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
             if (viewer.getVersion().getMinorVersion() < 8) continue;
             for (TabPlayer target : TAB.getInstance().getOnlinePlayers()) {
-                if (target.tablistData.disabled.get()) continue;
+                // MineVN start
+                if (target.tablistData.disabled.get() && !target.tablistData.ignoreDisabled.get()) continue;
+                // MineVN end
                 //if (!viewer.getTabList().containsEntry(target.getTablistId())) continue;
                 viewer.getTabList().updateDisplayName(getTablistUUID(target, target), null);
             }
@@ -191,26 +200,39 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
 
     @Override
     public void onServerChange(@NotNull TabPlayer p, @NotNull String from, @NotNull String to) {
-        if (updateProperties(p) && !p.tablistData.disabled.get()) updatePlayer(p, true);
-        if (TAB.getInstance().getFeatureManager().isFeatureEnabled(TabConstants.Feature.PIPELINE_INJECTION)) return;
-        TAB.getInstance().getCpu().getProcessingThread().executeLater(new TimedCaughtTask(TAB.getInstance().getCpu(), () -> {
-            for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
-                if (!all.tablistData.disabled.get() && p.getVersion().getMinorVersion() >= 8
-                        //&& p.getTabList().containsEntry(all.getTablistId())
-                )
-                    p.getTabList().updateDisplayName(getTablistUUID(all, p), getTabFormat(all, p));
-                if (all != p && !p.tablistData.disabled.get() && all.getVersion().getMinorVersion() >= 8
-                        //&& all.getTabList().containsEntry(p.getTablistId())
-                )
-                    all.getTabList().updateDisplayName(getTablistUUID(p, all), getTabFormat(p, all));
-            }
-            if (redis != null) {
-                for (RedisPlayer redis : redis.getRedisPlayers().values()) {
-                    p.getTabList().updateDisplayName(redis.getUniqueId(), redis.getTabFormat());
-                }
-            }
-        }, getFeatureName(), CpuUsageCategory.PLAYER_JOIN), 300);
+
+        // Update properties and player only if not disabled or if in main cluster
+        if ((updateProperties(p) && (!p.tablistData.disabled.get()) || p.tablistData.ignoreDisabled.get())) {
+            updatePlayer(p, true);
+        }
+
+        // Return if Pipeline Injection feature is enabled
+        if (TAB.getInstance().getFeatureManager().isFeatureEnabled(TabConstants.Feature.PIPELINE_INJECTION)) {
+            return;
+        }
+
+        // Execute player display name updates with a delayed task
+        TAB.getInstance().getCpu().getProcessingThread().executeLater(
+                new TimedCaughtTask(TAB.getInstance().getCpu(), () -> {
+                    for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
+                        // Update display names for all online players
+                        if ((!all.tablistData.disabled.get() || p.tablistData.ignoreDisabled.get()) && p.getVersion().getMinorVersion() >= 8){
+                            p.getTabList().updateDisplayName(getTablistUUID(all, p), getTabFormat(all, p));
+                        }
+                        if (all != p && (!all.tablistData.disabled.get() || p.tablistData.ignoreDisabled.get()) && all.getVersion().getMinorVersion() >= 8) {
+                            all.getTabList().updateDisplayName(getTablistUUID(p, all), getTabFormat(p, all));
+                        }
+                    }
+
+                    if (redis != null) {
+                        for (RedisPlayer redisPlayer : redis.getRedisPlayers().values()) {
+                            p.getTabList().updateDisplayName(redisPlayer.getUniqueId(), redisPlayer.getTabFormat());
+                        }
+                    }
+                }, getFeatureName(), CpuUsageCategory.PLAYER_JOIN), 300
+        );
     }
+
 
     @Override
     public void onWorldChange(@NotNull TabPlayer changed, @NotNull String from, @NotNull String to) {
@@ -248,7 +270,7 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
             boolean suffix = refreshed.tablistData.suffix.update();
             refresh = prefix || name || suffix;
         }
-        if (refreshed.tablistData.disabled.get()) return;
+        if (refreshed.tablistData.disabled.get() && !refreshed.tablistData.ignoreDisabled.get()) return;
         if (refresh) {
             updatePlayer(refreshed, true);
         }
@@ -265,11 +287,17 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
     public void onJoin(@NotNull TabPlayer connectedPlayer) {
         ((TrackedTabList<?, ?>)connectedPlayer.getTabList()).setAntiOverride(configuration.antiOverride);
         loadProperties(connectedPlayer);
+        // MineVN start
         if (disableChecker.isDisableConditionMet(connectedPlayer)) {
             connectedPlayer.tablistData.disabled.set(true);
         } else {
+            if (connectedPlayer.globalPlayerListData.clusterMainServerId != null && configuration.viewerFormatCheck.contains(connectedPlayer.server) &&
+                    connectedPlayer.globalPlayerListData.clusterMainServerId.equals(connectedPlayer.server)) {
+                connectedPlayer.tablistData.ignoreDisabled.set(true);
+            }
             updatePlayer(connectedPlayer, true);
         }
+        // MineVN end
         if (connectedPlayer.getVersion().getMinorVersion() < 8) return;
         Runnable r = () -> {
             for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
@@ -293,7 +321,7 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
 
     @Override
     public void onVanishStatusChange(@NotNull TabPlayer player) {
-        if (player.isVanished() || player.tablistData.disabled.get()) return;
+        if (player.isVanished() || player.tablistData.disabled.get() || !player.tablistData.ignoreDisabled.get()) return;
         for (TabPlayer viewer : TAB.getInstance().getOnlinePlayers()) {
             if (viewer.getVersion().getMinorVersion() < 8) continue;
             //if (!viewer.getTabList().containsEntry(player.getTablistId())) continue;
@@ -409,6 +437,11 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
 
         /** Flag tracking whether this feature is disabled for the player with condition or not */
         public final AtomicBoolean disabled = new AtomicBoolean();
+
+        // MineVN start
+        /** Flag tracking whether this feature is disabled for the player with condition or not */
+        public final AtomicBoolean ignoreDisabled = new AtomicBoolean();
+        // MineVN end
     }
 
     /**

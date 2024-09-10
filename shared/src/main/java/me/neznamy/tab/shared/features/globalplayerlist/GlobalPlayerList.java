@@ -32,6 +32,7 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
     @NotNull private final GlobalPlayerListConfiguration configuration;
     @NotNull  private final Map<String, String> serverToGroupName = new HashMap<>();
     @NotNull private final Map<String, Object> groupNameToGroup = new HashMap<>();
+    @NotNull private final Map<String, String> serverToClusterMain = new HashMap<>();
     @Nullable private final PlayerList playerlist = TAB.getInstance().getFeatureManager().getFeature(TabConstants.Feature.PLAYER_LIST);
 
     /**
@@ -66,6 +67,9 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
         for (TabPlayer all : onlinePlayers.getPlayers()) {
             all.globalPlayerListData.serverGroup = getServerGroup(all.server);
             all.globalPlayerListData.onSpyServer = configuration.spyServers.contains(all.server.toLowerCase());
+            // MineVN start
+            all.globalPlayerListData.clusterMainServerId = getClusterMainServerId(all.server);
+            // MineVN end
         }
         for (TabPlayer viewer : onlinePlayers.getPlayers()) {
             for (TabPlayer displayed : onlinePlayers.getPlayers()) {
@@ -90,6 +94,15 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
         if (displayed == viewer) return true;
         if (!TAB.getInstance().getPlatform().canSee(viewer, displayed)) return false;
         if (viewer.globalPlayerListData.onSpyServer) return true;
+        // MineVN start
+        if (displayed.globalPlayerListData.clusterMainServerId != null && viewer.globalPlayerListData.clusterMainServerId != null) {
+            // viewer is on the main server of the cluster group and displayed in part of cluster group
+            if (viewer.server.equals(displayed.globalPlayerListData.clusterMainServerId)) {
+                TAB.getInstance().debug("Viewer " + viewer.getName() + " is on " + viewer.server + " and displayed " + displayed.getName() + " is part of cluster group " + displayed.globalPlayerListData.clusterMainServerId);
+                return true;
+            }
+        }
+        // MineVN end
         return viewer.globalPlayerListData.serverGroup == displayed.globalPlayerListData.serverGroup;
     }
 
@@ -121,22 +134,61 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
 
     @NotNull
     private String computeServerGroup(@NotNull String server) {
+        // MineVN start
         for (Map.Entry<String, List<String>> group : configuration.sharedServers.entrySet()) {
-            for (String serverDefinition : group.getValue()) {
-                if (serverDefinition.endsWith("*")) {
-                    if (server.toLowerCase().startsWith(serverDefinition.substring(0, serverDefinition.length()-1).toLowerCase()))
-                        return group.getKey();
-                } else if (serverDefinition.startsWith("*")) {
-                    if (server.toLowerCase().endsWith(serverDefinition.substring(1).toLowerCase()))
-                        return group.getKey();
-                }  else {
-                    if (server.equalsIgnoreCase(serverDefinition))
-                        return group.getKey();
-                }
+            if (serverMatchesGroup(server, group.getValue())) {
+                return group.getKey();
             }
         }
+        // MineVN end
         return configuration.isolateUnlistedServers ? "isolated:" + server : "DEFAULT";
     }
+
+    // MineVN start
+    /**
+     * Returns the main server of the cluster group of specified server.
+     * @param playerServer server id need to check
+     * @return server id of the main server of the cluster group
+     */
+    private String getClusterMainServerId(String playerServer) {
+        return serverToClusterMain.computeIfAbsent(playerServer, this::computeClusterServer);
+    }
+
+    /**
+     * Returns the main server of the cluster group of specified server.
+     * @param server server id need to check
+     * @return server id of the main server of the cluster group
+     */
+    private String computeClusterServer(String server) {
+        for (Map.Entry<String, List<String>> cluster : configuration.clusterServers.entrySet()) {
+            if (cluster.getKey().equals(server) || serverMatchesGroup(server, cluster.getValue())) {
+                return cluster.getKey();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the main server of the cluster group of specified server.
+     * @param server server id need to check
+     * @param groupServers list of servers
+     * @return true if server is part of the group, false otherwise
+     */
+    private boolean serverMatchesGroup(@NotNull String server, @NotNull List<String> groupServers) {
+        for (String serverDefinition : groupServers) {
+            if (serverDefinition.endsWith("*") && server.toLowerCase().startsWith(serverDefinition.substring(0, serverDefinition.length() - 1).toLowerCase())) {
+                return true;
+            }
+            if (serverDefinition.startsWith("*") && server.toLowerCase().endsWith(serverDefinition.substring(1).toLowerCase())) {
+                return true;
+            }
+            if (server.equalsIgnoreCase(serverDefinition)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // MineVN end
 
     @Override
     public void unload() {
@@ -152,6 +204,9 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
         onlinePlayers.addPlayer(connectedPlayer);
         connectedPlayer.globalPlayerListData.serverGroup = getServerGroup(connectedPlayer.server);
         connectedPlayer.globalPlayerListData.onSpyServer = configuration.spyServers.contains(connectedPlayer.server.toLowerCase());
+        // MineVN start
+        connectedPlayer.globalPlayerListData.clusterMainServerId = getClusterMainServerId(connectedPlayer.server);
+        // MineVN end
         for (TabPlayer all : onlinePlayers.getPlayers()) {
             if (connectedPlayer.server.equals(all.server)) continue;
             if (shouldSee(all, connectedPlayer)) {
@@ -182,6 +237,9 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
     public void onServerChange(@NotNull TabPlayer changed, @NotNull String from, @NotNull String to) {
         changed.globalPlayerListData.serverGroup = getServerGroup(changed.server);
         changed.globalPlayerListData.onSpyServer = configuration.spyServers.contains(changed.server.toLowerCase());
+        // MineVN start
+        changed.globalPlayerListData.clusterMainServerId = getClusterMainServerId(changed.server);
+        // MineVN end
         // TODO fix players potentially not appearing on rapid server switching (if anyone reports it)
         // Player who switched server is removed from tablist of other players in ~70-110ms (depending on online count), re-add with a delay
         customThread.executeLater(new TimedCaughtTask(TAB.getInstance().getCpu(), () -> {
@@ -368,5 +426,10 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
 
         /** Flag tracking whether the player is on spy server or not */
         private boolean onSpyServer;
+
+        // MineVN start
+        /** Cluster group of server the player is connected to */
+        public Object clusterMainServerId;
+        // MineVN end
     }
 }
