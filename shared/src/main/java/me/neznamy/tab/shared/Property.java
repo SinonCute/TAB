@@ -303,6 +303,7 @@ public class Property {
         // Direct placeholders
         for (String identifier : relPlaceholders) {
             RelationalPlaceholderImpl pl = (RelationalPlaceholderImpl) TAB.getInstance().getPlaceholderManager().getPlaceholder(identifier);
+            TAB.getInstance().debug("Replacing " + pl.getIdentifier() + " for " + viewer.getName() + " as " + owner.getName());
             format = format.replace(pl.getIdentifier(), EnumChatFormat.color(pl.getLastValue(viewer, owner)));
         }
 

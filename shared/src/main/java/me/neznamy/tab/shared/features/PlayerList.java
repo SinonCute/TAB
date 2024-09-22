@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import me.neznamy.tab.api.tablist.TabListFormatManager;
+import me.neznamy.tab.shared.FeatureManager;
 import me.neznamy.tab.shared.Property;
 import me.neznamy.tab.shared.TAB;
 import me.neznamy.tab.shared.TabConstants;
@@ -15,6 +16,7 @@ import me.neznamy.tab.shared.chat.SimpleComponent;
 import me.neznamy.tab.shared.chat.TabComponent;
 import me.neznamy.tab.shared.config.files.config.TablistFormattingConfiguration;
 import me.neznamy.tab.shared.cpu.TimedCaughtTask;
+import me.neznamy.tab.shared.features.globalplayerlist.GlobalPlayerList;
 import me.neznamy.tab.shared.features.layout.PlayerSlot;
 import me.neznamy.tab.shared.features.redis.RedisPlayer;
 import me.neznamy.tab.shared.features.redis.RedisSupport;
@@ -157,6 +159,11 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
         if (redis != null) {
             redis.registerMessage("tabformat", UpdateRedisPlayer.class, UpdateRedisPlayer::new);
         }
+        FeatureManager featureManager = TAB.getInstance().getFeatureManager();
+        GlobalPlayerList globalPlayerList = null;
+        if (featureManager.isFeatureEnabled(TabConstants.Feature.GLOBAL_PLAYER_LIST)) {
+            globalPlayerList = featureManager.getFeature(TabConstants.Feature.GLOBAL_PLAYER_LIST);
+        }
         for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {
             ((TrackedTabList<?, ?>)all.getTabList()).setAntiOverride(configuration.antiOverride);
             loadProperties(all);
@@ -167,8 +174,11 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
                         all.tablistData.prefix.get() + all.tablistData.name.get() + all.tablistData.suffix.get()));
             }
             // MineVN start
-            if (configuration.viewerFormatCheck.contains(all.server) && all.globalPlayerListData.clusterMainServerId.equals(all.server)) {
-                all.tablistData.ignoreDisabled.set(true);
+            if (globalPlayerList != null) {
+                String clusterMainServerId = globalPlayerList.getClusterMainServerId(all.server);
+                if (clusterMainServerId != null) {
+                    all.tablistData.ignoreDisabled.set(true);
+                }
             }
             // MineVN end
         }
@@ -176,7 +186,7 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
             if (viewer.getVersion().getMinorVersion() < 8) continue;
             for (TabPlayer target : TAB.getInstance().getOnlinePlayers()) {
                 // MineVN start
-                if (target.tablistData.disabled.get() && !target.tablistData.ignoreDisabled.get()) continue;
+                if (target.tablistData.disabled.get() && !viewer.tablistData.ignoreDisabled.get()) continue;
                 // MineVN end
                 //if (!viewer.getTabList().containsEntry(target.getTablistId())) continue;
                 viewer.getTabList().updateDisplayName(getTablistUUID(target, viewer), getTabFormat(target, viewer));
@@ -190,7 +200,7 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
             if (viewer.getVersion().getMinorVersion() < 8) continue;
             for (TabPlayer target : TAB.getInstance().getOnlinePlayers()) {
                 // MineVN start
-                if (target.tablistData.disabled.get() && !target.tablistData.ignoreDisabled.get()) continue;
+                if (target.tablistData.disabled.get() && !viewer.tablistData.ignoreDisabled.get()) continue;
                 // MineVN end
                 //if (!viewer.getTabList().containsEntry(target.getTablistId())) continue;
                 viewer.getTabList().updateDisplayName(getTablistUUID(target, target), null);
@@ -203,6 +213,7 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
 
         // Update properties and player only if not disabled or if in main cluster
         if ((updateProperties(p) && (!p.tablistData.disabled.get()) || p.tablistData.ignoreDisabled.get())) {
+            TAB.getInstance().debug("Updating player " + p.getName() + " due to server change");
             updatePlayer(p, true);
         }
 
@@ -270,7 +281,10 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
             boolean suffix = refreshed.tablistData.suffix.update();
             refresh = prefix || name || suffix;
         }
-        if (refreshed.tablistData.disabled.get() && !refreshed.tablistData.ignoreDisabled.get()) return;
+        if (refreshed.tablistData.disabled.get() && !refreshed.tablistData.ignoreDisabled.get()) {
+            TAB.getInstance().debug("Player " + refreshed.getName() + " is disabled, skipping refresh");
+            return;
+        }
         if (refresh) {
             updatePlayer(refreshed, true);
         }
@@ -288,16 +302,23 @@ public class PlayerList extends RefreshableFeature implements TabListFormatManag
         ((TrackedTabList<?, ?>)connectedPlayer.getTabList()).setAntiOverride(configuration.antiOverride);
         loadProperties(connectedPlayer);
         // MineVN start
+        FeatureManager featureManager = TAB.getInstance().getFeatureManager();
+        if (featureManager.isFeatureEnabled(TabConstants.Feature.GLOBAL_PLAYER_LIST)) {
+            GlobalPlayerList t = featureManager.getFeature(TabConstants.Feature.GLOBAL_PLAYER_LIST);
+            if (t != null) {
+                String clusterMainServerId = t.getClusterMainServerId(connectedPlayer.server);
+                if (clusterMainServerId != null) {
+                    connectedPlayer.tablistData.ignoreDisabled.set(true);
+                    updatePlayer(connectedPlayer, true);
+                }
+            }
+        }
+        // MineVN end
         if (disableChecker.isDisableConditionMet(connectedPlayer)) {
             connectedPlayer.tablistData.disabled.set(true);
         } else {
-            if (connectedPlayer.globalPlayerListData.clusterMainServerId != null && configuration.viewerFormatCheck.contains(connectedPlayer.server) &&
-                    connectedPlayer.globalPlayerListData.clusterMainServerId.equals(connectedPlayer.server)) {
-                connectedPlayer.tablistData.ignoreDisabled.set(true);
-            }
             updatePlayer(connectedPlayer, true);
         }
-        // MineVN end
         if (connectedPlayer.getVersion().getMinorVersion() < 8) return;
         Runnable r = () -> {
             for (TabPlayer all : TAB.getInstance().getOnlinePlayers()) {

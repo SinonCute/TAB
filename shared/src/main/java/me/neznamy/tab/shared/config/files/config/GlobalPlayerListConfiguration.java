@@ -34,7 +34,7 @@ public class GlobalPlayerListConfiguration extends ConfigurationSection {
             sharedServers.put(serverGroup.toString(), getStringList(SECTION + ".server-groups." + serverGroup, Collections.emptyList()));
         }
         //MineVN start
-        for (Object cluster : getMap(SECTION + ".clusterServers", Collections.emptyMap()).keySet()) {
+        for (Object cluster : getMap(SECTION + ".server-clusters", Collections.emptyMap()).keySet()) {
             clusterServers.put(cluster.toString(), getStringList(SECTION + ".server-clusters." + cluster, Collections.emptyList()));
         }
         //MineVN end

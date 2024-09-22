@@ -150,7 +150,7 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
      * @param playerServer server id need to check
      * @return server id of the main server of the cluster group
      */
-    private String getClusterMainServerId(String playerServer) {
+    public String getClusterMainServerId(String playerServer) {
         return serverToClusterMain.computeIfAbsent(playerServer, this::computeClusterServer);
     }
 
@@ -285,7 +285,8 @@ public class GlobalPlayerList extends RefreshableFeature implements JoinListener
     @NotNull
     public TabList.Entry getAddInfoData(@NotNull TabPlayer p, @NotNull TabPlayer viewer) {
         TabComponent format = null;
-        if (playerlist != null && !p.tablistData.disabled.get()) {
+        if (playerlist != null && (!p.tablistData.disabled.get() || viewer.tablistData.ignoreDisabled.get())) {
+            TAB.getInstance().debug("GlobalPlayerList is using PlayerList for " + viewer.getName() + " to see " + p.getName());
             format = playerlist.getTabFormat(p, viewer);
         }
         int gameMode = (configuration.othersAsSpectators && !p.server.equals(viewer.server)) ||
