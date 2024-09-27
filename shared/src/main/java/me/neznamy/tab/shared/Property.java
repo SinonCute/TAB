@@ -21,8 +21,6 @@ import org.jetbrains.annotations.Nullable;
  */
 public class Property {
 
-    private static long counter;
-
     /** Internal identifier for this text for PlaceholderAPI expansion, null if it should not be exposed */
     @Getter
     @Nullable
@@ -52,6 +50,9 @@ public class Property {
 
     /** Last known value after parsing non-relational placeholders */
     private String lastReplacedValue;
+
+    /** Flag tracking whether last replaced value may contain relational placeholders or not */
+    private boolean mayContainRelPlaceholders;
     
     /** Source defining value of the text, displayed in debug command */
     @Nullable private String source;
@@ -274,6 +275,7 @@ public class Property {
         string = EnumChatFormat.color(string);
         if (!lastReplacedValue.equals(string)) {
             lastReplacedValue = string;
+            mayContainRelPlaceholders = lastReplacedValue.indexOf('%') != -1;
             if (name != null) {
                 TAB.getInstance().getPlaceholderManager().getTabExpansion().setPropertyValue(owner, name, lastReplacedValue);
             }
@@ -299,6 +301,7 @@ public class Property {
      * @return  format for the viewer
      */
     public @NotNull String getFormat(@NotNull TabPlayer viewer) {
+        if (!mayContainRelPlaceholders) return lastReplacedValue;
         String format = lastReplacedValue;
         // Direct placeholders
         for (String identifier : relPlaceholders) {
@@ -315,14 +318,5 @@ public class Property {
             if (listener != null) listener.addUsedPlaceholder(identifier);
         }
         return format;
-    }
-
-    /**
-     * Returns a new unique property name.
-     *
-     * @return  A new unique property name.
-     */
-    public static String randomName() {
-        return String.valueOf(counter++);
     }
 }

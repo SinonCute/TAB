@@ -57,7 +57,7 @@ public class LayoutView {
                     manager.getConfiguration().emptySlotPing,
                     0,
                     new SimpleComponent(""),
-                    0
+                    Integer.MAX_VALUE - manager.getConfiguration().direction.translateSlot(slot)
             ));
         }
         tick();
